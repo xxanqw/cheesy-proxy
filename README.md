@@ -2,7 +2,7 @@
 Simple, lightweight and easy to use wireproxy client
 
 ## Usage
->![Important]  
+>[!IMPORTANT]  
 >You need to download wireproxy.exe by yourself, you can find repository down below in `Thanks` section.  
 >Same with config file, you need to have your own server with WireGuard installation. Same can be found down below.   
 >You may face some bugs (it's a WIP project, but still usable)
@@ -20,7 +20,7 @@ Simple, lightweight and easy to use wireproxy client
 - You're good to go proxy is up running you can connect to it with your browser extensions and other proxy utilities!
 
 ## Build
->![Note]  
+>[!NOTE]  
 >Do not build it as onefile, code is not optimized for this
 
 Just copy this and paste into your terminal (Use PowerShell)
