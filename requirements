@@ -1,0 +1,5 @@
+pyqt6
+psutil
+win32com
+configparser
+nuitka
