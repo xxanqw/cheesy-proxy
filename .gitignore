@@ -1,0 +1,5 @@
+.venv
+main.build
+main.dist
+client.conf
+wireproxy.exe
