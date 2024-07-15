@@ -214,8 +214,21 @@ class SystemTrayApp:
     def show_error_message(self, title, message):
         QMessageBox.critical(self.tray_icon, title, message)
 
+def is_running():
+    for proc in psutil.process_iter(['pid', 'name']):
+        try:
+            info = proc.info
+            if info['name'] == 'cheesy proxy.exe' and proc.pid != os.getpid():
+                return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+    return False
 
 if __name__ == '__main__':
+    if is_running():
+        print("Cheesy Proxy is already running.")
+        sys.exit(0)
+
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon('icons/app.png'))
     app.setStyle('Fusion')
