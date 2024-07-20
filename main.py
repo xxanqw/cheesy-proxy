@@ -210,8 +210,10 @@ class SystemTrayApp:
         if os.path.exists(os.path.join(startup_folder, 'cheesy proxy.lnk')):
             self.start_at_login_action.setChecked(True)
             self.start_proxy()
+            return True
         else:
             self.start_at_login_action.setChecked(False)
+            return False
 
     def toggle_start_at_login(self):
         shell = Dispatch('WScript.Shell')
@@ -225,19 +227,20 @@ class SystemTrayApp:
             os.remove(os.path.join(startup_folder, 'cheesy proxy.lnk'))
 
     def check_settings(self):
-        if not os.path.exists('settings.ini'):
-            self.start_action.setEnabled(False)
-            self.stop_action.setEnabled(False)
-            self.start_at_login_action.setEnabled(False)
-            error_label = QLabel('Error: settings.ini not found')
-            error_label.setStyleSheet('color: red')
-            layout = QVBoxLayout()
-            layout.addWidget(error_label)
-            self.menu.setLayout(layout)
-        else:
-            self.start_action.setEnabled(True)
-            self.stop_action.setEnabled(False)
-            self.start_at_login_action.setEnabled(True)
+        if not self.set_start_at_login_status():
+            if not os.path.exists('settings.ini'):
+                self.start_action.setEnabled(False)
+                self.stop_action.setEnabled(False)
+                self.start_at_login_action.setEnabled(False)
+                error_label = QLabel('Error: settings.ini not found')
+                error_label.setStyleSheet('color: red')
+                layout = QVBoxLayout()
+                layout.addWidget(error_label)
+                self.menu.setLayout(layout)
+            else:
+                self.start_action.setEnabled(True)
+                self.stop_action.setEnabled(False)
+                self.start_at_login_action.setEnabled(True)
 
     def show_error_message(self, title, message):
         QMessageBox.critical(self.tray_icon, title, message)
