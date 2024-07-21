@@ -16,21 +16,11 @@ class SettingsDialog(QDialog):
 
     def initUI(self):
         self.setWindowTitle('Settings')
-        self.setFixedSize(400, 150)
+        self.setFixedSize(400, 100)
         self.app = QApplication.instance()
 
         layout = QVBoxLayout()
-        wireguard_group = QHBoxLayout()
         config_group = QHBoxLayout()
-
-        label1 = QLabel('Path to wireproxy.exe:')
-        self.wireproxy_path_edit = QLineEdit()
-        browse_button1 = QPushButton('Browse')
-        browse_button1.clicked.connect(self.browse_wireproxy_path)
-        layout.addWidget(label1)
-        wireguard_group.addWidget(self.wireproxy_path_edit)
-        wireguard_group.addWidget(browse_button1)
-        layout.addLayout(wireguard_group)
 
         label2 = QLabel('Path to client.conf:')
         self.client_conf_path_edit = QLineEdit()
@@ -47,27 +37,20 @@ class SettingsDialog(QDialog):
 
         self.setLayout(layout)
 
-    def browse_wireproxy_path(self):
-        path, _ = QFileDialog.getOpenFileName(self, 'Choose wireproxy.exe', '', 'WireProxy (wireproxy.exe)')
-        if path:
-            self.wireproxy_path_edit.setText(path)
-
     def browse_client_conf_path(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Choose client.conf', '', 'Config files (*.conf)')
         if path:
             self.client_conf_path_edit.setText(path)
 
     def save_settings(self):
-        wireproxy_path = self.wireproxy_path_edit.text()
         client_conf_path = self.client_conf_path_edit.text()
 
-        if not os.path.exists(wireproxy_path) or not os.path.exists(client_conf_path):
+        if not os.path.exists(client_conf_path):
             QMessageBox.critical(self, 'Error', 'Invalid path')
             return
 
         config = configparser.ConfigParser()
         config['Settings'] = {
-            'wireproxy_path': wireproxy_path,
             'client_conf_path': client_conf_path
         }
         with open('settings.ini', 'w') as f:
@@ -76,7 +59,7 @@ class SettingsDialog(QDialog):
         QMessageBox.information(self, 'Success', 'Settings saved successfully')
 
     def closeEvent(self, event):
-        if self.wireproxy_path_edit.text() and self.client_conf_path_edit.text():
+        if self.client_conf_path_edit.text():
             if QMessageBox.question(self, 'Close', 'Do you want to save the settings?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
                 self.save_settings()
                 event.ignore()
@@ -122,7 +105,7 @@ class SystemTrayApp:
         self.exit_action.triggered.connect(self.exit_app)
         self.menu.addAction(self.exit_action)
         self.proxy_process = None
-        self.wireproxy_path = None
+        self.wireproxy_path = folder + '/wireproxy.exe'
         self.client_conf_path = None
         self.load_settings()
         self.check_proxy_status_on_startup()
@@ -133,7 +116,10 @@ class SystemTrayApp:
     def start_proxy(self):
         if self.proxy_process is None:
             try:
-                self.proxy_process = subprocess.Popen([self.wireproxy_path, '-c', self.client_conf_path, '-s'], creationflags=subprocess.CREATE_NO_WINDOW)
+                if self.wireproxy_path is not None and self.client_conf_path is not None:
+                    self.proxy_process = subprocess.Popen([self.wireproxy_path, '-c', self.client_conf_path, '-s'], creationflags=subprocess.CREATE_NO_WINDOW)
+                else:
+                    self.show_error_message('Error', 'Invalid wireproxy_path or client_conf_path')
                 self.start_action.setEnabled(False)
                 self.stop_action.setEnabled(True)
                 self.tray_icon.showMessage('cheesy proxy', 'Proxy started successfully', QSystemTrayIcon.MessageIcon.Information)
@@ -164,23 +150,18 @@ class SystemTrayApp:
         if os.path.exists('settings.ini'):
             config = configparser.ConfigParser()
             config.read('settings.ini')
-            self.wireproxy_path = config.get('Settings', 'wireproxy_path', fallback=None)
             self.client_conf_path = config.get('Settings', 'client_conf_path', fallback=None)
 
     def show_settings_dialog(self):
-        if self.wireproxy_path:
-            self.settings_dialog.wireproxy_path_edit.setText(self.wireproxy_path)
         if self.client_conf_path:
             self.settings_dialog.client_conf_path_edit.setText(self.client_conf_path)
         if self.settings_dialog.show():
-            self.wireproxy_path = self.settings_dialog.wireproxy_path_edit.text()
             self.client_conf_path = self.settings_dialog.client_conf_path_edit.text()
             self.save_settings()
 
     def save_settings(self):
         config = configparser.ConfigParser()
         config['Settings'] = {
-            'wireproxy_path': self.wireproxy_path,
             'client_conf_path': self.client_conf_path
         }
         with open('settings.ini', 'w') as f:
@@ -191,7 +172,7 @@ class SystemTrayApp:
         for proc in psutil.process_iter(['pid', 'name']):
             try:
                 info = proc.info
-                if info['name'] == 'wireguard.exe':
+                if info['name'] == 'wireproxy.exe':
                     self.proxy_process = proc
                     self.proxy_process.kill()
                     self.start_action.setEnabled(True)
@@ -267,11 +248,9 @@ if __name__ == '__main__':
     if not os.path.exists('settings.ini'):
         settings_dialog = SettingsDialog()
         if settings_dialog.exec():
-            wireproxy_path = settings_dialog.wireproxy_path_edit.text()
             client_conf_path = settings_dialog.client_conf_path_edit.text()
             config = configparser.ConfigParser()
             config['Settings'] = {
-                'wireproxy_path': wireproxy_path,
                 'client_conf_path': client_conf_path
             }
             with open('settings.ini', 'w') as f:
