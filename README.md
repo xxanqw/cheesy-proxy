@@ -3,8 +3,10 @@ Simple, lightweight and easy to use wireproxy client
 
 ## Usage
 >[!IMPORTANT]  
->You need to download wireproxy.exe by yourself, you can find repository down below in `Thanks` section.  
->Same with config file, you need to have your own server with WireGuard installation. Same can be found down below.   
+>WireProxy is now included with Cheesy Proxy!  
+>
+>For config file, you need to have your own server with WireGuard installation. To setup it you need to check wireguard-install down below in `Thanks` section!  
+>
 >You may face some bugs (it's a WIP project, but still usable)
 
 - Download latest release and install it

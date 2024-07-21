@@ -3,3 +3,5 @@ psutil
 win32com
 configparser
 nuitka
+requests
+colorama
