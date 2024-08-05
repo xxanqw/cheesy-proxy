@@ -2,10 +2,10 @@ from os import system, path, walk
 import requests
 import tarfile
 import colorama
-from zipfile import ZipFile
+from zipfile import ZipFile, ZIP_DEFLATED
 
 #Info
-version = "1.0.3.0"
+version = "1.0.3.1"
 
 # Initialize colorama
 colorama.init()
@@ -65,11 +65,15 @@ except Exception as e:
 
 print(colorama.Fore.WHITE + "\nCreating portable...")
 try:
-    with ZipFile("cheesyproxy_portable.zip", "w") as zip:
+    with ZipFile("cheesyproxy_portable.zip", "w", compression=ZIP_DEFLATED, compresslevel=9) as zip:
+        total_files = sum([len(files) for _, _, files in walk("main.dist")])
+        progress = 0
         for root, _, files in walk("main.dist"):
             for file in files:
                 zip.write(path.join(root, file), path.join("cheesy proxy", path.relpath(path.join(root, file), "main.dist")))
-    print(colorama.Fore.GREEN + "Done!")
+                progress += 1
+                print(f"Progress: {progress}/{total_files}", end="\r")
+    print(colorama.Fore.GREEN + "\t\tDone!")
 except Exception as e:
     print(colorama.Fore.RED + f"Failed to create portable.\nError: {e}")
     exit(1)
@@ -78,7 +82,6 @@ print(colorama.Fore.WHITE + "\nCleaning up...")
 try:
     system('del wireproxy.exe')
     system('del wireproxy_windows_amd64.tar.gz')
-    system('rmdir /s /q main.dist')
     system('rmdir /s /q main.build')
     print(colorama.Fore.GREEN + "Done!")
 except Exception as e:

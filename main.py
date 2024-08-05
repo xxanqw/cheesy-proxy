@@ -59,7 +59,12 @@ class SettingsDialog(QDialog):
         QMessageBox.information(self, 'Success', 'Settings saved successfully')
 
     def closeEvent(self, event):
-        if self.client_conf_path_edit.text():
+        config = configparser.ConfigParser()
+        with open('settings.ini', 'r') as f:
+            config.read_file(f)
+        client_conf_path = config.get('Settings', 'client_conf_path', fallback=None)
+
+        if self.client_conf_path_edit.text() != client_conf_path:
             if QMessageBox.question(self, 'Close', 'Do you want to save the settings?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
                 self.save_settings()
                 event.ignore()
