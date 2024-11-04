@@ -1,44 +1,52 @@
 import sys
 import os
 import subprocess
-from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox, QFileDialog, QHBoxLayout
-from PyQt6.QtGui import QIcon, QAction
 import psutil
-from win32com.client import Dispatch
 import configparser
-
-folder = os.path.dirname(os.path.abspath(__file__))
+import locale as pylocale
+from PySide6.QtWidgets import (
+    QApplication, QSystemTrayIcon, QMenu, QDialog, QVBoxLayout, QLabel,
+    QLineEdit, QPushButton, QMessageBox, QFileDialog, QHBoxLayout
+)
+from PySide6.QtGui import QIcon, QAction
+from PySide6.QtCore import QTranslator, QLocale, QObject, Qt
+from win32com.client import Dispatch
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
-        super(SettingsDialog, self).__init__(parent)
-        self.initUI()
-
-    def initUI(self):
-        self.setWindowTitle('Settings')
+        super().__init__(parent)
+        self.setWindowTitle(self.tr('Settings'))
         self.setFixedSize(400, 100)
-        self.app = QApplication.instance()
-
-        layout = QVBoxLayout()
-        config_group = QHBoxLayout()
-
-        label2 = QLabel('Path to client.conf:')
         self.client_conf_path_edit = QLineEdit()
-        browse_button2 = QPushButton('Browse')
-        browse_button2.clicked.connect(self.browse_client_conf_path)
-        layout.addWidget(label2)
-        config_group.addWidget(self.client_conf_path_edit)
-        config_group.addWidget(browse_button2)
-        layout.addLayout(config_group)
+        self.init_ui()
 
-        save_button = QPushButton('Save')
+    def init_ui(self):
+        layout = QVBoxLayout()
+        config_layout = QHBoxLayout()
+
+        label = QLabel(self.tr('Path to client.conf:'))
+        browse_button = QPushButton(self.tr('Browse'))
+        browse_button.clicked.connect(self.browse_client_conf_path)
+
+        config_layout.addWidget(self.client_conf_path_edit)
+        config_layout.addWidget(browse_button)
+
+        layout.addWidget(label)
+        layout.addLayout(config_layout)
+
+        save_button = QPushButton(self.tr('Save'))
         save_button.clicked.connect(self.save_settings)
         layout.addWidget(save_button)
 
         self.setLayout(layout)
 
     def browse_client_conf_path(self):
-        path, _ = QFileDialog.getOpenFileName(self, 'Choose client.conf', '', 'Config files (*.conf)')
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            self.tr('Choose client.conf'),
+            'C:\\',
+            self.tr('Config files (*.conf)')
+        )
         if path:
             self.client_conf_path_edit.setText(path)
 
@@ -46,109 +54,121 @@ class SettingsDialog(QDialog):
         client_conf_path = self.client_conf_path_edit.text()
 
         if not os.path.exists(client_conf_path):
-            QMessageBox.critical(self, 'Error', 'Invalid path')
+            QMessageBox.critical(
+                self,
+                self.tr('Error'),
+                self.tr('Invalid path')
+            )
             return
 
         config = configparser.ConfigParser()
-        config['Settings'] = {
-            'client_conf_path': client_conf_path
-        }
-        with open('settings.ini', 'w') as f:
-            config.write(f)
+        config['Settings'] = {'client_conf_path': client_conf_path}
 
-        QMessageBox.information(self, 'Success', 'Settings saved successfully')
+        with open('settings.ini', 'w') as settings_file:
+            config.write(settings_file)
+
+        QMessageBox.information(
+            self,
+            self.tr('Success'),
+            self.tr('Settings saved successfully')
+        )
 
     def closeEvent(self, event):
-        config = configparser.ConfigParser()
-        with open('settings.ini', 'r') as f:
-            config.read_file(f)
-        client_conf_path = config.get('Settings', 'client_conf_path', fallback=None)
+        self.hide()
+        event.ignore()
 
-        if self.client_conf_path_edit.text() != client_conf_path:
-            if QMessageBox.question(self, 'Close', 'Do you want to save the settings?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
-                self.save_settings()
-                event.ignore()
-                self.hide()
-            else:
-                event.ignore()
-                self.hide()
-        else:
-            event.ignore()
-            self.hide()
-
-
-class SystemTrayApp:
-    def __init__(self, app):
-        self.app = app
-        self.tray_icon = QSystemTrayIcon(self.app)
-        self.tray_icon.setIcon(QIcon('icons/app.png'))
+class SystemTrayApp(QObject):
+    def __init__(self):
+        super().__init__()
+        self.app = QApplication.instance()
+        self.tray_icon = QSystemTrayIcon(QIcon('icons/app.png'), self.app)
+        self.tray_icon.setToolTip(self.tr('cheesy proxy - Idle'))
         self.tray_icon.setVisible(True)
-        self.tray_icon.setToolTip('cheesy proxy - Idle')
-        self.menu = QMenu()
-        self.menu.addSection('cheesy proxy')
-        self.start_action = QAction('Start')
+
+        self.create_menu()
+        self.proxy_process = None
+        self.wireproxy_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'wireproxy.exe')
+        self.client_conf_path = None
+        self.settings_dialog = SettingsDialog()
+        self.load_settings()
+        self.check_proxy_status()
+        self.set_autostart_status()
+        self.validate_settings()
+
+    def create_menu(self):
+        menu = QMenu()
+
+        self.start_action = QAction(self.tr('Start'), self.app)
         self.start_action.setIcon(QIcon('icons/start.png'))
         self.start_action.triggered.connect(self.start_proxy)
-        self.menu.addAction(self.start_action)
-        self.stop_action = QAction('Stop')
+        menu.addAction(self.start_action)
+
+        self.stop_action = QAction(self.tr('Stop'), self.app)
         self.stop_action.setIcon(QIcon('icons/stop.png'))
         self.stop_action.triggered.connect(self.stop_proxy)
-        self.menu.addAction(self.stop_action)
-        self.menu.addSeparator()
-        self.start_at_login_action = QAction('Autostart')
-        self.start_at_login_action.setCheckable(True)
-        self.start_at_login_action.triggered.connect(self.toggle_start_at_login)
-        self.menu.addAction(self.start_at_login_action)
-        self.settings_action = QAction('Settings')
+        self.stop_action.setEnabled(False)
+        menu.addAction(self.stop_action)
+
+        menu.addSeparator()
+
+        self.autostart_action = QAction(self.tr('Autostart'), self.app)
+        self.autostart_action.setCheckable(True)
+        self.autostart_action.triggered.connect(self.toggle_autostart)
+        menu.addAction(self.autostart_action)
+
+        self.settings_action = QAction(self.tr('Settings'), self.app)
         self.settings_action.setIcon(QIcon('icons/settings.png'))
         self.settings_action.triggered.connect(self.show_settings_dialog)
-        self.menu.addAction(self.settings_action)
-        self.tray_icon.setContextMenu(self.menu)
-        self.menu.addSeparator()
-        self.exit_action = QAction('Exit')
-        self.exit_action.setIcon(QIcon('icons/app.png'))
-        self.exit_action.triggered.connect(self.exit_app)
-        self.menu.addAction(self.exit_action)
-        self.proxy_process = None
-        self.wireproxy_path = folder + '/wireproxy.exe'
-        self.client_conf_path = None
-        self.load_settings()
-        self.check_proxy_status_on_startup()
-        self.set_start_at_login_status()
-        self.check_settings()
-        self.settings_dialog = SettingsDialog()
+        menu.addAction(self.settings_action)
+
+        menu.addSeparator()
+
+        exit_action = QAction(self.tr('Exit'), self.app)
+        exit_action.setIcon(QIcon('icons/app.png'))
+        exit_action.triggered.connect(self.exit_app)
+        menu.addAction(exit_action)
+
+        self.tray_icon.setContextMenu(menu)
 
     def start_proxy(self):
-        if self.proxy_process is None:
-            try:
-                if self.wireproxy_path is not None and self.client_conf_path is not None:
-                    self.proxy_process = subprocess.Popen([self.wireproxy_path, '-c', self.client_conf_path, '-s'], creationflags=subprocess.CREATE_NO_WINDOW)
-                else:
-                    self.show_error_message('Error', 'Invalid wireproxy_path or client_conf_path')
-                self.start_action.setEnabled(False)
-                self.stop_action.setEnabled(True)
-                self.tray_icon.showMessage('cheesy proxy', 'Proxy started successfully', QSystemTrayIcon.MessageIcon.Information)
-                self.tray_icon.setToolTip('cheesy proxy - Running')
-            except FileNotFoundError:
-                self.show_error_message('Error', 'wireproxy.exe or client.conf not found')
-            except Exception as e:
-                self.show_error_message('Error', str(e))
+        if not self.proxy_process:
+            if self.wireproxy_path and self.client_conf_path:
+                try:
+                    self.proxy_process = subprocess.Popen(
+                        [self.wireproxy_path, '-c', self.client_conf_path, '-s'],
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    self.start_action.setEnabled(False)
+                    self.stop_action.setEnabled(True)
+                    self.tray_icon.setToolTip(self.tr('cheesy proxy - Running'))
+                    self.tray_icon.showMessage(
+                        self.tr('cheesy proxy'),
+                        self.tr('Proxy started successfully'),
+                        QSystemTrayIcon.Information
+                    )
+                except Exception as e:
+                    self.show_error(self.tr('Error starting proxy'), str(e))
+            else:
+                self.show_error(
+                    self.tr('Configuration Error'),
+                    self.tr('wireproxy.exe or client.conf path is invalid.')
+                )
 
     def stop_proxy(self):
-       if self.proxy_process is not None:
-            try:
-                self.proxy_process.terminate()
-                self.proxy_process = None
-                self.start_action.setEnabled(True)
-                self.stop_action.setEnabled(False)
-                self.tray_icon.showMessage('cheesy proxy', 'Proxy stopped successfully', QSystemTrayIcon.MessageIcon.Information)
-                self.tray_icon.setToolTip('cheesy proxy - Idle')
-            except Exception as e:
-                self.show_error_message('Error', str(e))
+        if self.proxy_process:
+            self.proxy_process.terminate()
+            self.proxy_process = None
+            self.start_action.setEnabled(True)
+            self.stop_action.setEnabled(False)
+            self.tray_icon.setToolTip(self.tr('cheesy proxy - Idle'))
+            self.tray_icon.showMessage(
+                self.tr('cheesy proxy'),
+                self.tr('Proxy stopped successfully'),
+                QSystemTrayIcon.Information
+            )
 
     def exit_app(self):
-        if self.proxy_process is not None:
-            self.stop_proxy()
+        self.stop_proxy()
         self.app.quit()
 
     def load_settings(self):
@@ -156,110 +176,90 @@ class SystemTrayApp:
             config = configparser.ConfigParser()
             config.read('settings.ini')
             self.client_conf_path = config.get('Settings', 'client_conf_path', fallback=None)
+        else:
+            self.show_settings_dialog()
+            self.validate_settings()
 
     def show_settings_dialog(self):
         if self.client_conf_path:
             self.settings_dialog.client_conf_path_edit.setText(self.client_conf_path)
-        if self.settings_dialog.show():
+        if self.settings_dialog.exec():
             self.client_conf_path = self.settings_dialog.client_conf_path_edit.text()
             self.save_settings()
 
     def save_settings(self):
         config = configparser.ConfigParser()
-        config['Settings'] = {
-            'client_conf_path': self.client_conf_path
-        }
-        with open('settings.ini', 'w') as f:
-            config.write(f)
-        self.check_settings()
+        config['Settings'] = {'client_conf_path': self.client_conf_path}
+        with open('settings.ini', 'w') as settings_file:
+            config.write(settings_file)
+        self.validate_settings()
 
-    def check_proxy_status_on_startup(self):
+    def check_proxy_status(self):
         for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                info = proc.info
-                if info['name'] == 'wireproxy.exe':
-                    self.proxy_process = proc
-                    self.proxy_process.kill()
-                    self.start_action.setEnabled(True)
-                    self.stop_action.setEnabled(False)
-                    self.tray_icon.setToolTip('cheesy proxy - Idle')
-                    return
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                pass
+            if proc.info.get('name') == 'wireproxy.exe':
+                proc.kill()
+                break
         self.start_action.setEnabled(True)
         self.stop_action.setEnabled(False)
-        self.tray_icon.setToolTip('cheesy proxy - Idle')
 
-    def set_start_at_login_status(self):
+    def set_autostart_status(self):
         shell = Dispatch('WScript.Shell')
         startup_folder = shell.SpecialFolders('Startup')
-        if os.path.exists(os.path.join(startup_folder, 'cheesy proxy.lnk')):
-            self.start_at_login_action.setChecked(True)
+        shortcut_path = os.path.join(startup_folder, 'cheesy proxy.lnk')
+        if os.path.exists(shortcut_path):
+            self.autostart_action.setChecked(True)
             self.start_proxy()
-            return True
         else:
-            self.start_at_login_action.setChecked(False)
-            return False
+            self.autostart_action.setChecked(False)
 
-    def toggle_start_at_login(self):
+    def toggle_autostart(self):
         shell = Dispatch('WScript.Shell')
         startup_folder = shell.SpecialFolders('Startup')
-        if self.start_at_login_action.isChecked():
-            shortcut = shell.CreateShortCut(os.path.join(startup_folder, 'cheesy proxy.lnk'))
-            shortcut.Targetpath = os.path.join(folder, 'cheesy proxy.exe')
-            shortcut.WorkingDirectory = folder
+        shortcut_path = os.path.join(startup_folder, 'cheesy proxy.lnk')
+        target_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'cheesy proxy.exe')
+
+        if self.autostart_action.isChecked():
+            shortcut = shell.CreateShortCut(shortcut_path)
+            shortcut.Targetpath = target_path
+            shortcut.WorkingDirectory = os.path.dirname(target_path)
             shortcut.save()
         else:
-            os.remove(os.path.join(startup_folder, 'cheesy proxy.lnk'))
+            if os.path.exists(shortcut_path):
+                os.remove(shortcut_path)
 
-    def check_settings(self):
-        if not self.set_start_at_login_status():
-            if not os.path.exists('settings.ini'):
-                self.start_action.setEnabled(False)
-                self.stop_action.setEnabled(False)
-                self.start_at_login_action.setEnabled(False)
-                error_label = QLabel('Error: settings.ini not found')
-                error_label.setStyleSheet('color: red')
-                layout = QVBoxLayout()
-                layout.addWidget(error_label)
-                self.menu.setLayout(layout)
-            else:
-                self.start_action.setEnabled(True)
-                self.stop_action.setEnabled(False)
-                self.start_at_login_action.setEnabled(True)
+    def validate_settings(self):
+        if not os.path.exists('settings.ini') or not self.client_conf_path:
+            self.start_action.setEnabled(False)
+            self.stop_action.setEnabled(False)
+            self.autostart_action.setEnabled(False)
+        else:
+            self.start_action.setEnabled(True)
+            self.autostart_action.setEnabled(True)
 
-    def show_error_message(self, title, message):
-        QMessageBox.critical(self.tray_icon, title, message)
+    def show_error(self, title, message):
+        QMessageBox.critical(None, title, message)
 
-def is_running():
+def is_already_running():
+    current_pid = os.getpid()
     for proc in psutil.process_iter(['pid', 'name']):
-        try:
-            info = proc.info
-            if info['name'] == 'cheesy proxy.exe' and proc.pid != os.getpid():
-                return True
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            pass
+        if proc.info.get('name') == 'cheesy proxy.exe' and proc.pid != current_pid:
+            return True
     return False
 
 if __name__ == '__main__':
-    if is_running():
-        print("Cheesy Proxy is already running.")
+    if is_already_running():
         sys.exit(0)
 
     app = QApplication(sys.argv)
+    translator = QTranslator()
+    locale = pylocale.getlocale()[0]
+    locale_dict = {None: 'en_US', 'English_UnitedStates': 'en_US', 'Ukrainian_Ukraine': 'uk_UA'}
+    true_locale = locale_dict.get(locale, 'en_US')
+    if translator.load(f"i18n/{true_locale}.qm"):
+        app.installTranslator(translator)
+
     app.setWindowIcon(QIcon('icons/app.png'))
     app.setStyle('Fusion')
 
-    if not os.path.exists('settings.ini'):
-        settings_dialog = SettingsDialog()
-        if settings_dialog.exec():
-            client_conf_path = settings_dialog.client_conf_path_edit.text()
-            config = configparser.ConfigParser()
-            config['Settings'] = {
-                'client_conf_path': client_conf_path
-            }
-            with open('settings.ini', 'w') as f:
-                config.write(f)
-
-    tray_app = SystemTrayApp(app)
+    tray_app = SystemTrayApp()
     sys.exit(app.exec())
