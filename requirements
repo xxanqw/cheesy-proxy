@@ -1,7 +1,8 @@
-pyqt6
+pyside6
 psutil
-win32com
+pywin32
 configparser
 nuitka
 requests
 colorama
+imageio
